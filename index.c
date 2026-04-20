@@ -246,6 +246,16 @@ int index_add(Index *index, const char *path) {
     struct stat st;
     if (stat(path, &st) != 0) return -1;
 
+    // Check if entry already exists
+    IndexEntry *existing = index_find(index, path);
+    if (existing) {
+        existing->hash = id;
+        existing->mtime_sec = st.st_mtime;
+        existing->size = st.st_size;
+
+        return index_save(index);
+    }
+
     // Add new entry
     IndexEntry *entry = &index->entries[index->count++];
 
