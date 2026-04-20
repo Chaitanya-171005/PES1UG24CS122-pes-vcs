@@ -110,17 +110,70 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 
     memcpy(full, header, header_len);
     memcpy(full + header_len, data, len);
-    
+
     // Compute SHA-256 hash of full object
     compute_hash(full, total_size, id_out);
-    
+
     // Deduplication: if object already exists, skip writing
     if (object_exists(id_out)) {
-    free(full);
-    return 0;
+        free(full);
+        return 0;
     }
 
-    return -1;
+    // Build path
+    char path[512];
+    object_path(id_out, path, sizeof(path));
+
+    // Extract directory path (.pes/objects/XX/)
+    char dir[512];
+    strncpy(dir, path, sizeof(dir));
+    char *slash = strrchr(dir, '/');
+    if (!slash) {
+        free(full);
+        return -1;
+    }
+    *slash = '\0';
+
+    // Create directories if they don’t exist
+    mkdir(OBJECTS_DIR, 0755);
+    mkdir(dir, 0755);
+
+    // Temporary file path
+    char temp_path[512];
+    snprintf(temp_path, sizeof(temp_path), "%s/tmpXXXXXX", dir);
+
+    int fd = mkstemp(temp_path);
+    if (fd < 0) {
+        free(full);
+        return -1;
+    }
+
+    // Write full object
+    if (write(fd, full, total_size) != (ssize_t)total_size) {
+        close(fd);
+        free(full);
+        return -1;
+    }
+
+    // Flush to disk
+    fsync(fd);
+    close(fd);
+
+    // Atomic rename
+    if (rename(temp_path, path) != 0) {
+        free(full);
+        return -1;
+    }
+
+    // fsync directory (important for persistence)
+    int dir_fd = open(dir, O_DIRECTORY);
+    if (dir_fd >= 0) {
+        fsync(dir_fd);
+        close(dir_fd);
+    }
+
+    free(full);
+    return 0;
 }
 
 // Read an object from the store.
