@@ -140,7 +140,10 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 
     // Temporary file path
     char temp_path[512];
-    snprintf(temp_path, sizeof(temp_path), "%s/tmpXXXXXX", dir);
+    if (snprintf(temp_path, sizeof(temp_path), "%s/tmpXXXXXX", dir) >= (int)sizeof(temp_path)) {
+    free(full);
+    return -1;
+    }
 
     int fd = mkstemp(temp_path);
     if (fd < 0) {
