@@ -214,6 +214,47 @@ int index_save(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    (void)index; (void)path;
-    return -1;
+    // Open file
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    size_t size = ftell(f);
+    rewind(f);
+
+    // Read file content
+    void *data = malloc(size);
+    if (!data) {
+        fclose(f);
+        return -1;
+    }
+
+    fread(data, 1, size, f);
+    fclose(f);
+
+    // Write blob object
+    ObjectID id;
+    if (object_write(OBJ_BLOB, data, size, &id) != 0) {
+        free(data);
+        return -1;
+    }
+
+    free(data);
+
+    // Get file metadata
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    // Add new entry
+    IndexEntry *entry = &index->entries[index->count++];
+
+    entry->mode = get_file_mode(path);
+    entry->hash = id;
+    entry->mtime_sec = st.st_mtime;
+    entry->size = st.st_size;
+    strcpy(entry->path, path);
+
+    // Save index
+    return index_save(index);
 }
