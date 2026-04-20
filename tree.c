@@ -129,41 +129,86 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //   - object_write    : save that binary buffer to the store as OBJ_TREE
 //
 // Returns 0 on success, -1 on error.
+int write_tree_recursive(IndexEntry *entries, int count, ObjectID *id_out) {
+    Tree tree;
+    tree.count = 0;
+
+    for (int i = 0; i < count; i++) {
+        char *path = entries[i].path;
+        char *slash = strchr(path, '/');
+
+        if (!slash) {
+            // File
+            TreeEntry *entry = &tree.entries[tree.count++];
+            entry->mode = entries[i].mode;
+            entry->hash = entries[i].hash;
+            strcpy(entry->name, path);
+        } else {
+            // Directory
+            size_t dir_len = slash - path;
+
+            char dirname[256];
+            strncpy(dirname, path, dir_len);
+            dirname[dir_len] = '\0';
+
+            // Collect entries belonging to this directory
+            IndexEntry sub_entries[MAX_TREE_ENTRIES];
+            int sub_count = 0;
+
+            for (int j = 0; j < count; j++) {
+                if (strncmp(entries[j].path, dirname, dir_len) == 0 &&
+                    entries[j].path[dir_len] == '/') {
+
+                    // Remove "dirname/" prefix
+                    sub_entries[sub_count] = entries[j];
+                    memmove(sub_entries[sub_count].path,
+                            entries[j].path + dir_len + 1,
+                            strlen(entries[j].path + dir_len + 1) + 1);
+
+                    sub_count++;
+                }
+            }
+
+            // Recursively build subtree
+            ObjectID sub_id;
+            if (write_tree_recursive(sub_entries, sub_count, &sub_id) != 0) {
+                return -1;
+            }
+
+            // Add directory entry
+            TreeEntry *entry = &tree.entries[tree.count++];
+            entry->mode = MODE_DIR;
+            entry->hash = sub_id;
+            strcpy(entry->name, dirname);
+
+            // Skip processed entries
+            i += sub_count - 1;
+        }
+    }
+
+    // Serialize tree
+    void *data;
+    size_t len;
+    if (tree_serialize(&tree, &data, &len) != 0) {
+        return -1;
+    }
+
+    // Write object
+    if (object_write(OBJ_TREE, data, len, id_out) != 0) {
+        free(data);
+        return -1;
+    }
+
+    free(data);
+    return 0;
+}
+
 int tree_from_index(ObjectID *id_out) {
     Index index;
 
-    // Load index (staged files)
     if (index_load(&index) != 0) {
         return -1;
     }
 
-    Tree tree;
-    tree.count = 0;
-
-    for (int i = 0; i < index.count; i++) {
-        TreeEntry *entry = &tree.entries[tree.count++];
-
-        char *path = index.entries[i].path;
-
-        // Check if path contains a directory
-        char *slash = strchr(path, '/');
-
-        if (slash) {
-            // Directory case → take only first part
-            size_t len = slash - path;
-            strncpy(entry->name, path, len);
-            entry->name[len] = '\0';
-
-            entry->mode = MODE_DIR; // mark as directory
-        } else {
-            // File case
-            strcpy(entry->name, path);
-            entry->mode = index.entries[i].mode;
-        }
-
-        entry->hash = index.entries[i].hash;
-    }
-
-    (void)id_out;
-    return -1;
+    return write_tree_recursive(index.entries, index.count, id_out);
 }
