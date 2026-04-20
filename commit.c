@@ -200,9 +200,15 @@ int commit_create(const char *message, ObjectID *id_out) {
         return -1;
     }
 
-    // Read parent commit (may not exist)
+    // Read parent commit
     ObjectID parent_id;
     int has_parent = (head_read(&parent_id) == 0);
+
+    // Get author string
+    const char *author = pes_author();
+
+    // Get current time
+    time_t now = time(NULL);
 
     (void)message;
     (void)id_out;
