@@ -173,8 +173,35 @@ int index_load(Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    (void)index;
-    return -1;
+    char temp_path[512];
+
+    // Create temp file path
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp", INDEX_FILE);
+
+    FILE *f = fopen(temp_path, "w");
+    if (!f) return -1;
+
+    for (int i = 0; i < index->count; i++) {
+        char hex[HASH_HEX_SIZE + 1];
+
+        // Convert hash → hex string
+        hash_to_hex(&index->entries[i].hash, hex);
+
+        fprintf(f, "%o %s %lu %u %s\n",
+                index->entries[i].mode,
+                hex,
+                index->entries[i].mtime_sec,
+                index->entries[i].size,
+                index->entries[i].path);
+    }
+
+    // Flush to disk
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+
+    // Atomic rename
+    return rename(temp_path, INDEX_FILE);
 }
 
 // Stage a file for the next commit.
