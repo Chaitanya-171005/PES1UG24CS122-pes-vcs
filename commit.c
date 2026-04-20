@@ -196,6 +196,7 @@ int head_update(const ObjectID *new_commit) {
 int commit_create(const char *message, ObjectID *id_out) {
     ObjectID tree_id;
 
+    // Build tree from index
     if (tree_from_index(&tree_id) != 0) {
         return -1;
     }
@@ -204,13 +205,42 @@ int commit_create(const char *message, ObjectID *id_out) {
     ObjectID parent_id;
     int has_parent = (head_read(&parent_id) == 0);
 
-    // Get author string
+    // Author + time
     const char *author = pes_author();
-
-    // Get current time
     time_t now = time(NULL);
 
-    (void)message;
-    (void)id_out;
-    return -1;
+    // Build commit content
+    char buffer[4096];
+    int offset = 0;
+
+    // tree line
+    char tree_hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(&tree_id, tree_hex);
+    offset += sprintf(buffer + offset, "tree %s\n", tree_hex);
+
+    // parent line (if exists)
+    if (has_parent) {
+        char parent_hex[HASH_HEX_SIZE + 1];
+        hash_to_hex(&parent_id, parent_hex);
+        offset += sprintf(buffer + offset, "parent %s\n", parent_hex);
+    }
+
+    // author + committer
+    offset += sprintf(buffer + offset, "author %s %ld\n", author, now);
+    offset += sprintf(buffer + offset, "committer %s %ld\n\n", author, now);
+
+    // message
+    offset += sprintf(buffer + offset, "%s\n", message);
+
+    // Write commit object
+    if (object_write(OBJ_COMMIT, buffer, offset, id_out) != 0) {
+        return -1;
+    }
+
+    // Update HEAD
+    if (head_update(id_out) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
