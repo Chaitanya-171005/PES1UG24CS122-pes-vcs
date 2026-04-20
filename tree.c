@@ -132,6 +132,7 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 int tree_from_index(ObjectID *id_out) {
     Index index;
 
+    // Load index (staged files)
     if (index_load(&index) != 0) {
         return -1;
     }
@@ -142,11 +143,25 @@ int tree_from_index(ObjectID *id_out) {
     for (int i = 0; i < index.count; i++) {
         TreeEntry *entry = &tree.entries[tree.count++];
 
-        entry->mode = index.entries[i].mode;
-        entry->hash = index.entries[i].hash;
+        char *path = index.entries[i].path;
 
-        // For now, copy full path directly (no directory handling yet)
-        strcpy(entry->name, index.entries[i].path);
+        // Check if path contains a directory
+        char *slash = strchr(path, '/');
+
+        if (slash) {
+            // Directory case → take only first part
+            size_t len = slash - path;
+            strncpy(entry->name, path, len);
+            entry->name[len] = '\0';
+
+            entry->mode = MODE_DIR; // mark as directory
+        } else {
+            // File case
+            strcpy(entry->name, path);
+            entry->mode = index.entries[i].mode;
+        }
+
+        entry->hash = index.entries[i].hash;
     }
 
     (void)id_out;
